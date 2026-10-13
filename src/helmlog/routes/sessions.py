@@ -381,6 +381,27 @@ async def _compute_session_track(storage: Storage, session_id: int) -> dict[str,
             (prestart_cutoff, end_utc),
         )
     positions = await pos_cur.fetchall()
+
+    # Optional historical telemetry source. SQLite remains the default.
+    import os
+
+    if os.environ.get("HELMLOG_TELEMETRY_SOURCE", "sqlite") == "influxdb":
+        from helmlog.telemetry_influx import InfluxDBTelemetrySource
+
+        source = InfluxDBTelemetrySource(
+            url=os.environ["INFLUX_URL"],
+            token=os.environ["INFLUX_TOKEN"],
+            org=os.environ["INFLUX_ORG"],
+            bucket=os.environ["INFLUX_BUCKET"],
+        )
+        try:
+            positions = source.positions(
+                datetime.fromisoformat(prestart_cutoff),
+                datetime.fromisoformat(end_utc),
+            )
+        finally:
+            source.close()
+
     if not positions:
         return {"type": "FeatureCollection", "features": []}
 
@@ -1357,9 +1378,26 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
     speeds_rows = await _scoped(
         "SELECT ts, speed_kts FROM speeds WHERE ts >= ? AND ts <= ? ORDER BY ts"
     )
-    cogsog_rows = await _scoped(
-        "SELECT ts, cog_deg, sog_kts FROM cogsog WHERE ts >= ? AND ts <= ? ORDER BY ts"
-    )
+    if os.environ.get("HELMLOG_TELEMETRY_SOURCE", "sqlite") == "influxdb":
+        from helmlog.telemetry_influx import InfluxDBTelemetrySource
+
+        source = InfluxDBTelemetrySource(
+            url=os.environ["INFLUX_URL"],
+            token=os.environ["INFLUX_TOKEN"],
+            org=os.environ["INFLUX_ORG"],
+            bucket=os.environ["INFLUX_BUCKET"],
+        )
+        try:
+            cogsog_rows = await source.cogsog(
+                datetime.fromisoformat(prestart_start_utc),
+                datetime.fromisoformat(end_utc),
+            )
+        finally:
+            source.close()
+    else:
+        cogsog_rows = await _scoped(
+            "SELECT ts, cog_deg, sog_kts FROM cogsog WHERE ts >= ? AND ts <= ? ORDER BY ts"
+        )
     # ``attitudes`` lacks a race_id column (#622 hasn't been backfilled to
     # the same tagging scheme); fall back to the time-window scan.
     att_rows = await _windowed(

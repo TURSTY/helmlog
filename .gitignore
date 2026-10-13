@@ -61,3 +61,6 @@ docker/libMediaSDK-dev*.deb
 
 # Video-analysis sidecar (#839): ledger, frames, clips — reproducible from the videos
 data/video-analysis/
+
+# Local HelmLog development database and runtime data
+/dev-data/
