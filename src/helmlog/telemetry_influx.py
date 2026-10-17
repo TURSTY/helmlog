@@ -18,10 +18,19 @@ class InfluxDBTelemetrySource:
         token: str,
         org: str,
         bucket: str,
+        schema: str = "sailing",
+        vessel: str | None = None,
+        gps_source: str | None = None,
     ) -> None:
+        if schema not in ("sailing", "signalk"):
+            raise ValueError(f"Unsupported InfluxDB schema: {schema}")
+
         self.url = url
         self.org = org
         self.bucket = bucket
+        self.schema = schema
+        self.vessel = vessel
+        self.gps_source = gps_source
         self.client = InfluxDBClient(url=url, token=token, org=org)
 
     def close(self) -> None:
@@ -34,33 +43,59 @@ class InfluxDBTelemetrySource:
     ) -> list[dict[str, Any]]:
         """Return GPS positions in HelmLog-compatible column names."""
 
+        if self.schema == "signalk":
+            if not self.vessel or not self.gps_source:
+                raise ValueError("Signal K requires vessel and gps_source")
+
+            measurement = "navigation.position"
+            lat_field = "lat"
+            lon_field = "lon"
+            filters = (
+                f'  |> filter(fn: (r) => r.context == '
+                f'"vessels.urn:mrn:imo:mmsi:{self.vessel}")\n'
+                f'  |> filter(fn: (r) => r.source == "{self.gps_source}")\n'
+            )
+        else:
+            measurement = "sailing"
+            lat_field = "latitude"
+            lon_field = "longitude"
+            filters = ""
+
         query = f'''
 from(bucket: "{self.bucket}")
   |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
-  |> filter(fn: (r) => r._measurement == "sailing")
-  |> filter(fn: (r) => r._field == "latitude" or r._field == "longitude")
+  |> filter(fn: (r) => r._measurement == "{measurement}")
+{filters}  |> filter(fn: (r) => r._field == "{lat_field}" or r._field == "{lon_field}")
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> keep(columns: ["_time", "latitude", "longitude"])
+  |> keep(columns: ["_time", "{lat_field}", "{lon_field}"])
   |> sort(columns: ["_time"])
 '''
 
         tables = self.client.query_api().query(query, org=self.org)
-
         positions = []
 
         for table in tables:
             for record in table.records:
-                lat = record.values.get("latitude")
-                lon = record.values.get("longitude")
+                lat = record.values.get(lat_field)
+                lon = record.values.get(lon_field)
 
                 if lat is None or lon is None:
+                    continue
+
+                lat = float(lat)
+                lon = float(lon)
+
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    continue
+
+                if abs(lat) < 0.001 and abs(lon) < 0.001:
                     continue
 
                 positions.append(
                     {
                         "ts": record.get_time().isoformat(),
-                        "latitude_deg": float(lat),
-                        "longitude_deg": float(lon),
+                        "latitude_deg": lat,
+                        "longitude_deg": lon,
                     }
                 )
 
