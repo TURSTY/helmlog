@@ -1,3 +1,4 @@
+
 """Read historical sailing telemetry from InfluxDB 2."""
 
 from __future__ import annotations
@@ -117,6 +118,65 @@ from(bucket: "{self.bucket}")
         start: datetime,
         end: datetime,
     ) -> list[dict[str, Any]]:
+        if self.schema == "signalk":
+            if not self.vessel or not self.gps_source:
+                raise ValueError("Signal K requires vessel and gps_source")
+
+            rows = []
+
+            measurements = [
+                ("navigation.speedOverGround", "sog_kts", 1.943844492),
+                (
+                    "navigation.courseOverGroundTrue",
+                    "cog_deg",
+                    180.0 / 3.141592653589793,
+                ),
+            ]
+
+            for measurement, output_field, conversion in measurements:
+                query = f'''
+from(bucket: "{self.bucket}")
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+  |> filter(fn: (r) => r._measurement == "{measurement}")
+  |> filter(fn: (r) => r.context == "vessels.urn:mrn:imo:mmsi:{self.vessel}")
+  |> filter(fn: (r) => r.source == "{self.gps_source}")
+  |> filter(fn: (r) => r._field == "value")
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])
+'''
+
+                tables = self.client.query_api().query(query, org=self.org)
+
+                for table in tables:
+                    for record in table.records:
+                        value = record.values.get("_value")
+                        if value is None:
+                            continue
+
+                        converted = float(value) * conversion
+
+                        if output_field == "cog_deg":
+                            converted %= 360.0
+
+                        rows.append(
+                            {
+                                "ts": record.get_time().isoformat(),
+                                "sog_kts": (
+                                    converted
+                                    if output_field == "sog_kts"
+                                    else None
+                                ),
+                                "cog_deg": (
+                                    converted
+                                    if output_field == "cog_deg"
+                                    else None
+                                ),
+                            }
+                        )
+
+            rows.sort(key=lambda row: row["ts"])
+            return rows
+
         query = f'''
 from(bucket: "{self.bucket}")
   |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
