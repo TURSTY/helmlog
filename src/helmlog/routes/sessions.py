@@ -393,6 +393,9 @@ async def _compute_session_track(storage: Storage, session_id: int) -> dict[str,
             token=os.environ["INFLUX_TOKEN"],
             org=os.environ["INFLUX_ORG"],
             bucket=os.environ["INFLUX_BUCKET"],
+            schema=os.environ.get("HELMLOG_INFLUX_SCHEMA", "sailing"),
+            vessel=os.environ.get("HELMLOG_INFLUX_VESSEL"),
+            gps_source=os.environ.get("HELMLOG_INFLUX_GPS_SOURCE"),
         )
         try:
             positions = source.positions(
@@ -1386,6 +1389,9 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
             token=os.environ["INFLUX_TOKEN"],
             org=os.environ["INFLUX_ORG"],
             bucket=os.environ["INFLUX_BUCKET"],
+            schema=os.environ.get("HELMLOG_INFLUX_SCHEMA", "sailing"),
+            vessel=os.environ.get("HELMLOG_INFLUX_VESSEL"),
+            gps_source=os.environ.get("HELMLOG_INFLUX_GPS_SOURCE"),
         )
         try:
             cogsog_rows = await source.cogsog(
