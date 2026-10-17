@@ -1,4 +1,3 @@
-
 """Read historical sailing telemetry from InfluxDB 2."""
 
 from __future__ import annotations
@@ -122,8 +121,6 @@ from(bucket: "{self.bucket}")
             if not self.vessel or not self.gps_source:
                 raise ValueError("Signal K requires vessel and gps_source")
 
-            rows = []
-
             measurements = [
                 ("navigation.speedOverGround", "sog_kts", 1.943844492),
                 (
@@ -132,6 +129,9 @@ from(bucket: "{self.bucket}")
                     180.0 / 3.141592653589793,
                 ),
             ]
+
+            # Collect SOG and COG independently, then merge by UTC second.
+            by_second: dict[str, dict[str, Any]] = {}
 
             for measurement, output_field, conversion in measurements:
                 query = f'''
@@ -147,36 +147,42 @@ from(bucket: "{self.bucket}")
 
                 tables = self.client.query_api().query(query, org=self.org)
 
+                # Sort across Flux tables so the earliest reading wins.
+                readings = []
                 for table in tables:
                     for record in table.records:
                         value = record.values.get("_value")
-                        if value is None:
-                            continue
+                        if value is not None:
+                            readings.append((record.get_time(), float(value)))
 
-                        converted = float(value) * conversion
+                readings.sort(key=lambda item: item[0])
 
-                        if output_field == "cog_deg":
-                            converted %= 360.0
+                for timestamp, value in readings:
+                    second = timestamp.replace(microsecond=0).isoformat()
 
-                        rows.append(
-                            {
-                                "ts": record.get_time().isoformat(),
-                                "sog_kts": (
-                                    converted
-                                    if output_field == "sog_kts"
-                                    else None
-                                ),
-                                "cog_deg": (
-                                    converted
-                                    if output_field == "cog_deg"
-                                    else None
-                                ),
-                            }
-                        )
+                    if second not in by_second:
+                        by_second[second] = {
+                            "ts": second,
+                            "sog_kts": None,
+                            "cog_deg": None,
+                        }
 
-            rows.sort(key=lambda row: row["ts"])
-            return rows
+                    if by_second[second][output_field] is not None:
+                        continue
 
+                    converted = value * conversion
+
+                    if output_field == "cog_deg":
+                        converted %= 360.0
+
+                    by_second[second][output_field] = converted
+
+            return [
+                by_second[second]
+                for second in sorted(by_second)
+            ]
+
+        # Original synthetic telemetry reader.
         query = f'''
 from(bucket: "{self.bucket}")
   |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})

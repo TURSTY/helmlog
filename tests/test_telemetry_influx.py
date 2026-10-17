@@ -181,3 +181,45 @@ def test_signalk_cogsog() -> None:
         )
 
         source.close()
+
+
+def test_signalk_cogsog_merges_by_second() -> None:
+    """Preserve SOG and COG when their timestamps differ within a second."""
+    import asyncio
+    from datetime import timedelta
+
+    timestamp = datetime(2026, 10, 11, 0, 0, tzinfo=UTC)
+
+    sog_record = MagicMock()
+    sog_record.values = {"_value": 4.0}
+    sog_record.get_time.return_value = timestamp + timedelta(milliseconds=100)
+
+    cog_record = MagicMock()
+    cog_record.values = {"_value": 1.5707963267948966}
+    cog_record.get_time.return_value = timestamp + timedelta(milliseconds=150)
+
+    with patch("helmlog.telemetry_influx.InfluxDBClient") as client_class:
+        client = client_class.return_value
+        client.query_api.return_value.query.side_effect = [
+            [MagicMock(records=[sog_record])],
+            [MagicMock(records=[cog_record])],
+        ]
+
+        source = InfluxDBTelemetrySource(
+            url="http://localhost:18086",
+            token="test-token",
+            org="RattlerOrg",
+            bucket="RattlerBucket",
+            schema="signalk",
+            vessel="512009320",
+            gps_source="can0.c078c3003f034c09",
+        )
+
+        try:
+            rows = asyncio.run(source.cogsog(timestamp, timestamp + timedelta(seconds=1)))
+
+            assert len(rows) == 1
+            assert rows[0]["sog_kts"] == pytest.approx(7.775377968)
+            assert rows[0]["cog_deg"] == pytest.approx(90.0)
+        finally:
+            source.close()
