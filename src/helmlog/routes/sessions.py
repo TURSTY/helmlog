@@ -1279,9 +1279,7 @@ async def api_session_replay(
     # backwards into the prestart window so the scrubber can range over
     # pre-gun data). Bump the family suffix to force recompute on the
     # cached blobs that lack the new field.
-    return await cached_json_response(
-        request, race_id=session_id, key_family="session_replay_v3", compute=_compute
-    )
+    return JSONResponse(await _compute())
 
 
 async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str, Any]:
@@ -1395,6 +1393,14 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
         )
         try:
             cogsog_rows = await source.cogsog(
+                datetime.fromisoformat(prestart_start_utc),
+                datetime.fromisoformat(end_utc),
+            )
+            hdg_rows = await source.headings(
+                datetime.fromisoformat(prestart_start_utc),
+                datetime.fromisoformat(end_utc),
+            )
+            winds_rows = await source.winds(
                 datetime.fromisoformat(prestart_start_utc),
                 datetime.fromisoformat(end_utc),
             )

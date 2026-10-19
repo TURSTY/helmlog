@@ -214,3 +214,310 @@ from(bucket: "{self.bucket}")
 
         rows.sort(key=lambda row: row["ts"])
         return rows
+
+    async def headings(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        """Return historical true heading in HelmLog-compatible units."""
+        import asyncio
+
+        return await asyncio.to_thread(self._headings_sync, start, end)
+
+    def _headings_sync(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        import math
+
+        if self.schema == "signalk":
+            if not self.vessel:
+                raise ValueError("Signal K heading requires vessel")
+
+            query = f'''
+from(bucket: "{self.bucket}")
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+  |> filter(fn: (r) => r._measurement == "navigation.headingTrue")
+  |> filter(fn: (r) => r.context == "vessels.urn:mrn:imo:mmsi:{self.vessel}")
+  |> filter(fn: (r) => r.source == "derived-data")
+  |> filter(fn: (r) => r._field == "value")
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])
+'''
+        else:
+            query = f'''
+from(bucket: "{self.bucket}")
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+  |> filter(fn: (r) => r._measurement == "sailing")
+  |> filter(fn: (r) => r._field == "heading_deg")
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])
+'''
+
+        tables = self.client.query_api().query(query, org=self.org)
+
+        readings = []
+        for table in tables:
+            for record in table.records:
+                value = record.values.get("_value")
+                if value is None:
+                    continue
+
+                value = float(value)
+                if not math.isfinite(value):
+                    continue
+
+                readings.append((record.get_time(), value))
+
+        readings.sort(key=lambda item: item[0])
+
+        by_second: dict[str, dict[str, Any]] = {}
+
+        for timestamp, value in readings:
+            second = timestamp.replace(microsecond=0).isoformat()
+
+            if second in by_second:
+                continue
+
+            heading = math.degrees(value) if self.schema == "signalk" else value
+
+            by_second[second] = {
+                "ts": second,
+                "heading_deg": heading % 360.0,
+            }
+
+        return [by_second[key] for key in sorted(by_second)]
+
+    async def winds(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        """Return historical true and apparent wind for HelmLog replay."""
+        import asyncio
+
+        return await asyncio.to_thread(self._winds_sync, start, end)
+
+    def _winds_sync(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        import math
+
+        if self.schema == "signalk":
+            if not self.vessel:
+                raise ValueError("Signal K wind requires vessel")
+
+            measurements = [
+                ("environment.wind.speedTrue", 0, "speed", "derived-data"),
+                ("environment.wind.angleTrueWater", 0, "angle", "derived-data"),
+                ("environment.wind.speedApparent", 2, "speed", "Seatalk1.ST"),
+                ("environment.wind.angleApparent", 2, "angle", "Seatalk1.ST"),
+            ]
+        else:
+            measurements = [
+                ("sailing", 0, "speed", None),
+                ("sailing", 0, "angle", None),
+                ("sailing", 2, "speed", None),
+                ("sailing", 2, "angle", None),
+            ]
+
+        by_second: dict[tuple[str, int], dict[str, Any]] = {}
+
+        for measurement, reference, kind, source_name in measurements:
+            if self.schema == "signalk":
+                field = "value"
+                filters = (
+                    f'  |> filter(fn: (r) => r.context == '
+                    f'"vessels.urn:mrn:imo:mmsi:{self.vessel}")\n'
+                    f'  |> filter(fn: (r) => r.source == "{source_name}")\n'
+                )
+            else:
+                field = {
+                    (0, "speed"): "tws_kts",
+                    (0, "angle"): "twa_deg",
+                    (2, "speed"): "aws_kts",
+                    (2, "angle"): "awa_deg",
+                }[(reference, kind)]
+                filters = ""
+
+            query = f'''
+from(bucket: "{self.bucket}")
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+  |> filter(fn: (r) => r._measurement == "{measurement}")
+{filters}  |> filter(fn: (r) => r._field == "{field}")
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])
+'''
+
+            tables = self.client.query_api().query(query, org=self.org)
+
+            readings = []
+            for table in tables:
+                for record in table.records:
+                    value = record.values.get("_value")
+                    if value is None:
+                        continue
+                    value = float(value)
+                    if math.isfinite(value):
+                        readings.append((record.get_time(), value))
+
+            readings.sort(key=lambda item: item[0])
+
+            for timestamp, value in readings:
+                second = timestamp.replace(microsecond=0).isoformat()
+                key = (second, reference)
+
+                if key not in by_second:
+                    by_second[key] = {
+                        "ts": second,
+                        "wind_speed_kts": None,
+                        "wind_angle_deg": None,
+                        "reference": reference,
+                    }
+
+                output_field = (
+                    "wind_speed_kts" if kind == "speed" else "wind_angle_deg"
+                )
+
+                if by_second[key][output_field] is not None:
+                    continue
+
+                if self.schema == "signalk":
+                    converted = (
+                        value * 1.943844492
+                        if kind == "speed"
+                        else math.degrees(value)
+                    )
+                else:
+                    converted = value
+
+                by_second[key][output_field] = converted
+
+        return [
+            by_second[key]
+            for key in sorted(by_second)
+            if (
+                by_second[key]["wind_speed_kts"] is not None
+                and by_second[key]["wind_angle_deg"] is not None
+            )
+        ]
+
+    async def winds(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        """Return historical true and apparent wind for HelmLog replay."""
+        import asyncio
+
+        return await asyncio.to_thread(self._winds_sync, start, end)
+
+    def _winds_sync(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        import math
+
+        if self.schema == "signalk":
+            if not self.vessel:
+                raise ValueError("Signal K wind requires vessel")
+
+            measurements = [
+                ("environment.wind.speedTrue", 0, "speed", "derived-data"),
+                ("environment.wind.angleTrueWater", 0, "angle", "derived-data"),
+                ("environment.wind.speedApparent", 2, "speed", "Seatalk1.ST"),
+                ("environment.wind.angleApparent", 2, "angle", "Seatalk1.ST"),
+            ]
+        else:
+            measurements = [
+                ("sailing", 0, "speed", None),
+                ("sailing", 0, "angle", None),
+                ("sailing", 2, "speed", None),
+                ("sailing", 2, "angle", None),
+            ]
+
+        by_second: dict[tuple[str, int], dict[str, Any]] = {}
+
+        for measurement, reference, kind, source_name in measurements:
+            if self.schema == "signalk":
+                field = "value"
+                filters = (
+                    f'  |> filter(fn: (r) => r.context == '
+                    f'"vessels.urn:mrn:imo:mmsi:{self.vessel}")\n'
+                    f'  |> filter(fn: (r) => r.source == "{source_name}")\n'
+                )
+            else:
+                field = {
+                    (0, "speed"): "tws_kts",
+                    (0, "angle"): "twa_deg",
+                    (2, "speed"): "aws_kts",
+                    (2, "angle"): "awa_deg",
+                }[(reference, kind)]
+                filters = ""
+
+            query = f'''
+from(bucket: "{self.bucket}")
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+  |> filter(fn: (r) => r._measurement == "{measurement}")
+{filters}  |> filter(fn: (r) => r._field == "{field}")
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])
+'''
+
+            tables = self.client.query_api().query(query, org=self.org)
+
+            readings = []
+            for table in tables:
+                for record in table.records:
+                    value = record.values.get("_value")
+                    if value is None:
+                        continue
+                    value = float(value)
+                    if math.isfinite(value):
+                        readings.append((record.get_time(), value))
+
+            readings.sort(key=lambda item: item[0])
+
+            for timestamp, value in readings:
+                second = timestamp.replace(microsecond=0).isoformat()
+                key = (second, reference)
+
+                if key not in by_second:
+                    by_second[key] = {
+                        "ts": second,
+                        "wind_speed_kts": None,
+                        "wind_angle_deg": None,
+                        "reference": reference,
+                    }
+
+                output_field = (
+                    "wind_speed_kts" if kind == "speed" else "wind_angle_deg"
+                )
+
+                if by_second[key][output_field] is not None:
+                    continue
+
+                if self.schema == "signalk":
+                    converted = (
+                        value * 1.943844492
+                        if kind == "speed"
+                        else math.degrees(value)
+                    )
+                else:
+                    converted = value
+
+                by_second[key][output_field] = converted
+
+        return [
+            by_second[key]
+            for key in sorted(by_second)
+            if (
+                by_second[key]["wind_speed_kts"] is not None
+                and by_second[key]["wind_angle_deg"] is not None
+            )
+        ]

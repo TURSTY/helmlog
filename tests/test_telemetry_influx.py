@@ -223,3 +223,120 @@ def test_signalk_cogsog_merges_by_second() -> None:
             assert rows[0]["cog_deg"] == pytest.approx(90.0)
         finally:
             source.close()
+
+
+def test_signalk_headings() -> None:
+    """Read Rattler true heading and convert radians to degrees."""
+    import asyncio
+    from datetime import timedelta
+
+    timestamp = datetime(2026, 10, 10, 20, 50, tzinfo=UTC)
+
+    first = MagicMock()
+    first.values = {"_value": 1.5707963267948966}
+    first.get_time.return_value = timestamp + timedelta(milliseconds=100)
+
+    second = MagicMock()
+    second.values = {"_value": 1.6}
+    second.get_time.return_value = timestamp + timedelta(milliseconds=700)
+
+    with patch("helmlog.telemetry_influx.InfluxDBClient") as client_class:
+        client = client_class.return_value
+        client.query_api.return_value.query.return_value = [
+            MagicMock(records=[second, first])
+        ]
+
+        source = InfluxDBTelemetrySource(
+            url="http://localhost:18086",
+            token="test-token",
+            org="RattlerOrg",
+            bucket="RattlerBucket",
+            schema="signalk",
+            vessel="512009320",
+            gps_source="can0.c078c3003f034c09",
+        )
+
+        try:
+            rows = asyncio.run(
+                source.headings(timestamp, timestamp + timedelta(seconds=1))
+            )
+
+            assert rows == [
+                {
+                    "ts": timestamp.isoformat(),
+                    "heading_deg": pytest.approx(90.0),
+                }
+            ]
+
+            query = client.query_api.return_value.query.call_args.args[0]
+            assert 'r._measurement == "navigation.headingTrue"' in query
+            assert 'r.context == "vessels.urn:mrn:imo:mmsi:512009320"' in query
+            assert 'r.source == "derived-data"' in query
+            assert 'r._field == "value"' in query
+        finally:
+            source.close()
+
+
+def test_signalk_winds():
+    """True/apparent wind must retain angle signs and correct sources."""
+    import asyncio
+    import math
+    from datetime import timedelta
+
+    timestamp = datetime(2026, 10, 10, 21, 0, tzinfo=UTC)
+
+    measurements = {
+        "environment.wind.speedTrue": (8.0, "derived-data"),
+        "environment.wind.angleTrueWater": (-1.2, "derived-data"),
+        "environment.wind.speedApparent": (10.0, "Seatalk1.ST"),
+        "environment.wind.angleApparent": (-0.8, "Seatalk1.ST"),
+    }
+
+    def query_wind(query, org):
+        for measurement, (value, source_name) in measurements.items():
+            if f'r._measurement == "{measurement}"' not in query:
+                continue
+
+            assert f'r.source == "{source_name}"' in query
+            assert 'r.context == "vessels.urn:mrn:imo:mmsi:512009320"' in query
+            assert 'r._field == "value"' in query
+
+            record = MagicMock()
+            record.values = {"_value": value}
+            record.get_time.return_value = timestamp
+            return [MagicMock(records=[record])]
+
+        raise AssertionError(f"Unexpected wind query: {query}")
+
+    with patch("helmlog.telemetry_influx.InfluxDBClient") as client_class:
+        client = client_class.return_value
+        client.query_api.return_value.query.side_effect = query_wind
+
+        source = InfluxDBTelemetrySource(
+            url="http://localhost:18086",
+            token="test-token",
+            org="RattlerOrg",
+            bucket="RattlerBucket",
+            schema="signalk",
+            vessel="512009320",
+        )
+
+        try:
+            rows = asyncio.run(
+                source.winds(timestamp, timestamp + timedelta(seconds=1))
+            )
+
+            assert len(rows) == 2
+
+            true = next(r for r in rows if r["reference"] == 0)
+            apparent = next(r for r in rows if r["reference"] == 2)
+
+            assert true["wind_speed_kts"] == pytest.approx(8 * 1.943844492)
+            assert true["wind_angle_deg"] == pytest.approx(math.degrees(-1.2))
+            assert apparent["wind_speed_kts"] == pytest.approx(10 * 1.943844492)
+            assert apparent["wind_angle_deg"] == pytest.approx(math.degrees(-0.8))
+
+            assert true["ts"] == timestamp.isoformat()
+            assert apparent["ts"] == timestamp.isoformat()
+        finally:
+            source.close()
