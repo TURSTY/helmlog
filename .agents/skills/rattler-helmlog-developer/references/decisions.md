@@ -1,0 +1,17 @@
+# Confirmed decisions (interview through 2026-10-20)
+- Full racing analysis platform, not merely a replay adapter.
+- InfluxDB historical telemetry, SQLite application/session metadata; historical-first workflow.
+- Mixed guided/autonomous development, Dockerbox central host; skill shared through fork for ChatGPT and Codex.
+- Maintain upstream compatibility where practical; extend existing UI.
+- Prefer recorded trustworthy values; calculate missing derived metrics when inputs are adequate.
+- Data quality: flag anomalies and non-destructively filter obvious blips; distinguish visual and analytical filtering.
+- Preferred source with fallback; native Signal K SI at read boundary, conversion to HelmLog's verified contract.
+- Heel/trim expected from B&G Precision-9; actual historical paths and availability require verification.
+- Current set/drift may be read or calculated.
+- Long-term polar input ONLY from race-classified sessions, not cruising or practice.
+- Maintain best credible and statistically representative polars; factory polar seeds unobserved bins with explicit provenance.
+- Race-day polars generated manually; automatic analysis after race classification plus manual reprocessing.
+- Fleet comparison: track/SOG/COG only; future start timing and speed analysis.
+- Pragmatic tests; user approval required before commits, pushes, merges and production deployments.
+- Secrets in environment/protected local config; upstream review at milestones.
+- Limited InfluxDB retention, duration not yet established.

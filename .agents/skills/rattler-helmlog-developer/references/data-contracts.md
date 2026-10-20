@@ -1,0 +1,12 @@
+# HelmLog data contracts — verified partial snapshot
+Source: GitHub `TURSTY/helmlog`, branch `feature/influx-telemetry-source`, fetched 2026-10-20. Verify HEAD (`acc3ba959f660c13c2cb03fdc20f5221efdeef2d`) and changed files before relying on this snapshot.
+
+`src/helmlog/telemetry_influx.py` defines `InfluxDBTelemetrySource` and supports `schema='sailing'` or `schema='signalk'`. `positions(start,end)` returns `ts`, `latitude_deg`, `longitude_deg`; Signal K query uses `navigation.position` with fields `lat`, `lon`, configured vessel context and GPS source. `cogsog()` returns `sog_kts` and `cog_deg`; Signal K measurements `navigation.speedOverGround` (m/s converted by 1.943844492) and `navigation.courseOverGroundTrue` (radians converted to degrees). Data is merged by UTC second. `headings()` returns `heading_deg` from `navigation.headingTrue`, source `derived-data` (radians to degrees). `winds()` returns `ts`, `wind_speed_kts`, `wind_angle_deg`, `reference` (0 true, 2 apparent); true wind `environment.wind.speedTrue` and `environment.wind.angleTrueWater`, source `derived-data`; apparent `environment.wind.speedApparent` and `environment.wind.angleApparent`, source `Seatalk1.ST`. Wind speeds convert m/s to knots, angles radians to degrees.
+
+IMPORTANT: the branch currently contains duplicate `winds()` and `_winds_sync()` definitions. Later definitions override earlier ones; inspect and remove safely with tests after approval.
+
+`src/helmlog/cache.py` documents T1 process-scoped TTL cache and T2 SQLite `web_cache` content-addressed cache. `compute_race_data_hash` uses race id, start/end, position row count, linked results and calibration hash. Investigate whether external InfluxDB changes invalidate this hash: SQLite row counts alone may not reflect telemetry changes.
+
+`pyproject.toml`: Python >=3.12; pytest/pytest-asyncio, Ruff, mypy available. Validate exact commands and deployment configuration on Dockerbox.
+
+OPEN AUDIT: full field contracts across storage, session routes, replay API, frontend, polar calculations, analysis; cache invalidation for external telemetry; source-selection policy; historical STW, heel, trim, current paths; exact Influx retention; timestamps/timezone and bin/statistical definitions. Do not treat these as verified.
