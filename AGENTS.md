@@ -25,6 +25,10 @@ These rules override conflicting upstream guidance below for Rattler:
   already use InfluxDB.
 - Follow the [Rattler HelmLog Developer skill](.agents/skills/rattler-helmlog-developer/SKILL.md)
   for project-specific architecture, data contracts, and decisions.
+- Use the Rattler skill's risk-based validation budget: targeted checks during
+  iteration, broader checks when risk requires them, and explicit approval
+  before expensive validation. All four upstream pre-PR checks remain mandatory;
+  deferring a required check leaves the PR gate unmet.
 - Preserve existing upstream testing, worktree, PR, and other development
   requirements unless explicitly overridden by these Rattler-specific rules.
 

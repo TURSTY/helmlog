@@ -1,7 +1,7 @@
 # Installing and using Rattler HelmLog Developer
 
 ## Version and baselines
-Configuration version: **v1.0.1**. The v1.0 installation baseline is `f1ec3728915ffb910456d9bf19b0840f84e26ef3`; the original historical telemetry implementation baseline is `acc3ba959f660c13c2cb03fdc20f5221efdeef2d`. Neither marker asserts current HEAD; check Git before work. This documentation update does not re-audit application code.
+Configuration version: **v1.0.2**. The v1.0 installation baseline is `f1ec3728915ffb910456d9bf19b0840f84e26ef3`; the original historical telemetry implementation baseline is `acc3ba959f660c13c2cb03fdc20f5221efdeef2d`. Neither marker asserts current HEAD; check Git before work. This documentation update does not re-audit application code.
 
 ## Source of truth
 Store the entire `rattler-helmlog-developer/` directory in the HelmLog fork, preferably under `.agents/skills/rattler-helmlog-developer/` (confirm your installed Codex version’s discovery convention before relying on automatic loading). Version it alongside code. The GitHub repository is the canonical copy; this ZIP is a portable snapshot.

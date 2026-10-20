@@ -4,7 +4,7 @@ description: Develop and maintain Rattler's HelmLog fork with historical Signal 
 ---
 # Rattler HelmLog Developer
 
-Configuration version: **v1.0.1**.
+Configuration version: **v1.0.2**.
 
 Use this skill when discussing, investigating, implementing, testing or deploying Rattler-specific HelmLog functionality. Read the relevant files in `references/` before making recommendations. GitHub code is authoritative; reference documentation is a verified snapshot, not a substitute for checking changed code.
 
@@ -21,10 +21,10 @@ This skill is a reusable **development guide**, not an instruction to implement 
 
 ## Required workflow
 1. Identify the requested feature and consult architecture, data contracts, and decisions.
-2. Inspect relevant current fork code and upstream changes; never invent file paths, APIs or measurement availability.
+2. Inspect only relevant current fork code and upstream changes; never invent file paths, APIs or measurement availability.
 3. Verify telemetry measurement, field, source, vessel context, timestamps, and units against historical data before implementing a new mapping.
 4. Propose a small implementation and verification plan. Preserve upstream compatibility by keeping extensions modular.
-5. Preserve root AGENTS.md testing requirements, including TDD and all four checks before a PR; supplement automated tests with targeted manual replay checks. Do not call a feature complete until tested or explicitly mark it unverified.
+5. Preserve root AGENTS.md testing requirements, including TDD and all four checks before a PR; follow the [validation budget](references/development.md#validation-budget) for scope, approval and reuse. Do not call a feature complete until tested or explicitly mark it unverified.
 6. Diagnose the relevant cache layer (browser assets, running Python process, HelmLog T1/T2 cache, test fixtures, deployment image); restart/invalidate appropriately and verify new code is serving. Never clear all caches reflexively.
 7. Require explicit user approval BEFORE every Git commit, push, merge or production deployment. Do not follow conflicting automatic commit/push instructions. No destructive database operations without explicit approval.
 8. After meaningful milestones update references, decision log, current commit baseline, tests, and roadmap; do not commit those updates without approval.
