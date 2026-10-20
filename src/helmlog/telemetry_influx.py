@@ -21,6 +21,7 @@ class InfluxDBTelemetrySource:
         schema: str = "sailing",
         vessel: str | None = None,
         gps_source: str | None = None,
+        stw_source: str | None = None,
     ) -> None:
         if schema not in ("sailing", "signalk"):
             raise ValueError(f"Unsupported InfluxDB schema: {schema}")
@@ -31,6 +32,7 @@ class InfluxDBTelemetrySource:
         self.schema = schema
         self.vessel = vessel
         self.gps_source = gps_source
+        self.stw_source = stw_source
         self.client = InfluxDBClient(url=url, token=token, org=org)
 
     def close(self) -> None:
@@ -101,6 +103,60 @@ from(bucket: "{self.bucket}")
 
         positions.sort(key=lambda p: p["ts"])
         return positions
+
+    async def speeds(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Read STW in knots, independently of GPS speed over ground."""
+        import asyncio
+
+        return await asyncio.to_thread(self._speeds_sync, start, end)
+
+    def _speeds_sync(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        import json
+        import math
+
+        if self.schema == "signalk":
+            if not self.vessel or not self.stw_source:
+                raise ValueError("Signal K STW requires vessel and stw_source")
+            measurement, field = "navigation.speedThroughWater", "value"
+            context = json.dumps(f"vessels.urn:mrn:imo:mmsi:{self.vessel}")
+            filters = (
+                f"  |> filter(fn: (r) => r.context == {context})\n"
+                f"  |> filter(fn: (r) => r.source == {json.dumps(self.stw_source)})\n"
+            )
+        else:
+            measurement, field = "sailing", "speed_kts"
+            filters = ""
+
+        query = f'''
+from(bucket: {json.dumps(self.bucket)})
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+  |> filter(fn: (r) => r._measurement == "{measurement}")
+{filters}  |> filter(fn: (r) => r._field == "{field}")
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])
+'''
+        tables = self.client.query_api().query(query, org=self.org)
+        readings = []
+        for table in tables:
+            for record in table.records:
+                raw = record.values.get("_value")
+                if raw is None:
+                    continue
+                value = float(raw)
+                if math.isfinite(value) and value >= 0:
+                    timestamp = record.values.get("_time")
+                    if isinstance(timestamp, datetime):
+                        readings.append((timestamp, value))
+        readings.sort(key=lambda item: item[0])
+        by_second: dict[str, dict[str, Any]] = {}
+        for timestamp, value in readings:
+            second = timestamp.replace(microsecond=0).isoformat()
+            if second not in by_second:
+                by_second[second] = {
+                    "ts": second,
+                    "speed_kts": value * 1.943844492 if self.schema == "signalk" else value,
+                }
+        return [by_second[key] for key in sorted(by_second)]
 
     async def cogsog(
         self,

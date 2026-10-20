@@ -10,3 +10,6 @@ IMPORTANT: the inspected implementation snapshot contains duplicate `winds()` an
 `pyproject.toml`: Python >=3.12; pytest/pytest-asyncio, Ruff, mypy available. Validate exact commands and deployment configuration on Dockerbox.
 
 OPEN AUDIT: full field contracts across storage, session routes, replay API, frontend, polar calculations, analysis; cache invalidation for external telemetry; source-selection policy; historical STW, heel, trim, current paths; exact Influx retention; timestamps/timezone and bin/statistical definitions. Do not treat these as verified.
+
+## Historical STW implementation under review
+Based on `9f5e28271c8342dd46aeaf0088df5ef7c4b43c9c`, the uncommitted STW extension adds `speeds(start,end)` returning `ts` / `speed_kts` and populates replay `stw` independently of `sog`. Signal K requires an explicit vessel and `HELMLOG_INFLUX_STW_SOURCE`; missing history never falls back to SQLite or SOG. See [historical STW verification](../../../../docs/historical-stw.md) for source evidence, conversion, current-calculation limitations and stale/cache behavior. This is not a new committed baseline or a production verification.

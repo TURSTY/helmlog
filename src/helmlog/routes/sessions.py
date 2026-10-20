@@ -1376,9 +1376,6 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
     hdg_rows = await _scoped(
         "SELECT ts, heading_deg FROM headings WHERE ts >= ? AND ts <= ? ORDER BY ts"
     )
-    speeds_rows = await _scoped(
-        "SELECT ts, speed_kts FROM speeds WHERE ts >= ? AND ts <= ? ORDER BY ts"
-    )
     if os.environ.get("HELMLOG_TELEMETRY_SOURCE", "sqlite") == "influxdb":
         from helmlog.telemetry_influx import InfluxDBTelemetrySource
 
@@ -1390,8 +1387,13 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
             schema=os.environ.get("HELMLOG_INFLUX_SCHEMA", "sailing"),
             vessel=os.environ.get("HELMLOG_INFLUX_VESSEL"),
             gps_source=os.environ.get("HELMLOG_INFLUX_GPS_SOURCE"),
+            stw_source=os.environ.get("HELMLOG_INFLUX_STW_SOURCE"),
         )
         try:
+            speeds_rows = await source.speeds(
+                datetime.fromisoformat(prestart_start_utc),
+                datetime.fromisoformat(end_utc),
+            )
             cogsog_rows = await source.cogsog(
                 datetime.fromisoformat(prestart_start_utc),
                 datetime.fromisoformat(end_utc),
@@ -1407,6 +1409,9 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
         finally:
             source.close()
     else:
+        speeds_rows = await _scoped(
+            "SELECT ts, speed_kts FROM speeds WHERE ts >= ? AND ts <= ? ORDER BY ts"
+        )
         cogsog_rows = await _scoped(
             "SELECT ts, cog_deg, sog_kts FROM cogsog WHERE ts >= ? AND ts <= ? ORDER BY ts"
         )
