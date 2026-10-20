@@ -1,6 +1,6 @@
 # Source audit — 2026-10-20 (partial)
 
-Repository: TURSTY/helmlog, branch `feature/influx-telemetry-source`. These findings were inspected through GitHub file reads; baseline HEAD confirmed by user on Dockerbox: `acc3ba959f660c13c2cb03fdc20f5221efdeef2d`. Recheck if code changes.
+Repository: TURSTY/helmlog, branch `feature/influx-telemetry-source`. These findings were inspected through GitHub file reads; original historical telemetry implementation baseline confirmed by user on Dockerbox: `acc3ba959f660c13c2cb03fdc20f5221efdeef2d`. The v1.0 skill installation baseline is `f1ec3728915ffb910456d9bf19b0840f84e26ef3`, not a new application-code audit. Neither marker asserts current HEAD. Check actual HEAD and relevant changes before relying on these findings.
 
 ## Confirmed adapter contract
 - `src/helmlog/telemetry_influx.py`: `InfluxDBTelemetrySource.positions(start,end)` returns dictionaries with `ts`, `latitude_deg`, `longitude_deg` (decimal degrees).

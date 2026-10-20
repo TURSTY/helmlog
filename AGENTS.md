@@ -12,6 +12,22 @@ tool, the skill catalog, file-based memory). References to `/name` below are
 Claude Code skill shortcuts; the behavior they wrap is described inline or in
 `docs/`, so any agent can follow the rule without them.
 
+## Rattler-specific rules
+
+These rules override conflicting upstream guidance below for Rattler:
+
+- Explicit user approval is required BEFORE every Git commit, push, merge,
+  and production deployment. Do not follow conflicting instructions to
+  commit or push automatically.
+- InfluxDB 2 is the read-only source for Rattler's historical Signal K
+  telemetry. SQLite continues to manage application/session metadata and
+  existing SQLite-backed workflows. Do not assume all analysis paths
+  already use InfluxDB.
+- Follow the [Rattler HelmLog Developer skill](.agents/skills/rattler-helmlog-developer/SKILL.md)
+  for project-specific architecture, data contracts, and decisions.
+- Preserve existing upstream testing, worktree, PR, and other development
+  requirements unless explicitly overridden by these Rattler-specific rules.
+
 ## Top rules — read first
 
 - **Always work in a git worktree.** Multiple agents run concurrently in this

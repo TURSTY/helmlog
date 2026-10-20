@@ -3,7 +3,7 @@
 - Verify `git status`, branch, commit, upstream divergence before editing. Do not overwrite local changes.
 - Dockerbox development checkout: `~/development/helmlog`; development web port 3002 and test InfluxDB 18086 are historical observations, not permanent guarantees.
 - Protect production OpenPlotter InfluxDB from writes. Keep environment credentials outside Git.
-- Tests: targeted pytest for adapters, conversions, quality filters, source selection; end-to-end replay for timeline/graphs. Use Ruff/mypy where relevant.
+- Preserve root AGENTS.md worktree, TDD, PR, risk-tier and other development requirements except the explicit Rattler overrides. All four checks (pytest, Ruff check, Ruff format check, mypy) must pass before a PR. Add targeted adapter/conversion/source-selection tests and end-to-end replay checks where relevant.
 - Cache checklist: confirm changed source file, process/container running version, Python restart needed, T1 invalidation, T2 SQLite cached replay, browser hard refresh/static assets, API response freshness. Record exact remedy per change. Avoid destructive cache clearing.
-- Require user approval before `git commit`, `git push`, merge, or production deployment. Prepare diffs and report tests first.
+- Require explicit user approval BEFORE every `git commit`, `git push`, merge, or production deployment; do not follow conflicting automatic commit/push instructions. Prepare diffs and report tests first.
 - On milestones, refresh verified code references, SHA, architecture and decisions.

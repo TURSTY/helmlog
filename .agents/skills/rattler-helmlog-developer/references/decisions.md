@@ -1,6 +1,6 @@
 # Confirmed decisions (interview through 2026-10-20)
 - Full racing analysis platform, not merely a replay adapter.
-- InfluxDB historical telemetry, SQLite application/session metadata; historical-first workflow.
+- Read-only InfluxDB 2 historical Signal K telemetry; SQLite application/session metadata and existing SQLite-backed workflows. Historical-first workflow does not imply all analysis paths already use InfluxDB.
 - Mixed guided/autonomous development, Dockerbox central host; skill shared through fork for ChatGPT and Codex.
 - Maintain upstream compatibility where practical; extend existing UI.
 - Prefer recorded trustworthy values; calculate missing derived metrics when inputs are adequate.
@@ -12,6 +12,6 @@
 - Maintain best credible and statistically representative polars; factory polar seeds unobserved bins with explicit provenance.
 - Race-day polars generated manually; automatic analysis after race classification plus manual reprocessing.
 - Fleet comparison: track/SOG/COG only; future start timing and speed analysis.
-- Pragmatic tests; user approval required before commits, pushes, merges and production deployments.
+- Preserve upstream testing, worktree, PR and other requirements except explicit Rattler overrides. Explicit user approval is required BEFORE every commit, push, merge and production deployment; conflicting automatic commit/push instructions do not apply.
 - Secrets in environment/protected local config; upstream review at milestones.
 - Limited InfluxDB retention, duration not yet established.

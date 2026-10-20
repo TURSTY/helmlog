@@ -3,10 +3,14 @@
 - InfluxDB historical replay for positions, COG/SOG, heading, apparent and true wind (reported implemented; verify end-to-end on current branch).
 - SQLite-backed application/session metadata and historical session synthesis path (verify specifics).
 ## Immediate
-1. Review duplicate wind methods and tests.
-2. Audit complete backend-to-frontend telemetry contracts and external InfluxDB cache invalidation.
-3. Add STW, heel, trim, and current set/drift; verify source paths and unit conversions.
-4. Enforce race-only polar eligibility (current builder selects all completed sessions); integrate historical InfluxDB telemetry into analysis rather than only the track route.
+1. First planned skill-driven implementation test: historical STW (`navigation.speedThroughWater`). Verify field, source, vessel context, historical coverage and SI-to-HelmLog unit conversion before implementing; validate the adapter and replay contracts with tests.
+2. Follow with historical heel, then trim, then current set/drift; verify source paths and conversions, and reuse existing current calculations where appropriate.
+3. Enforce race-only polar eligibility (the audited builder selects all completed sessions); integrate historical InfluxDB telemetry into analysis rather than only the track route.
+
+## Technical debt and verification
+- Review duplicate `winds()` / `_winds_sync()` methods and tests as a separate cleanup task, not the first planned implementation test. Confirm the finding against actual HEAD before changing code.
+- Audit complete backend-to-frontend telemetry contracts and external InfluxDB cache invalidation as part of relevant implementation verification.
+
 ## Later
 - Long-term best and representative race-only polars; factory seeding with provenance.
 - On-demand race polars, manoeuvres, comparative race analysis.
