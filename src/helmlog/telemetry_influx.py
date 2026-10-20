@@ -22,6 +22,7 @@ class InfluxDBTelemetrySource:
         vessel: str | None = None,
         gps_source: str | None = None,
         stw_source: str | None = None,
+        attitude_source: str | None = None,
     ) -> None:
         if schema not in ("sailing", "signalk"):
             raise ValueError(f"Unsupported InfluxDB schema: {schema}")
@@ -33,6 +34,7 @@ class InfluxDBTelemetrySource:
         self.vessel = vessel
         self.gps_source = gps_source
         self.stw_source = stw_source
+        self.attitude_source = attitude_source
         self.client = InfluxDBClient(url=url, token=token, org=org)
 
     def close(self) -> None:
@@ -156,6 +158,64 @@ from(bucket: {json.dumps(self.bucket)})
                     "ts": second,
                     "speed_kts": value * 1.943844492 if self.schema == "signalk" else value,
                 }
+        return [by_second[key] for key in sorted(by_second)]
+
+    async def attitudes(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Return signed heel/trim degrees for display, without calibration."""
+        import asyncio
+
+        return await asyncio.to_thread(self._attitudes_sync, start, end)
+
+    def _attitudes_sync(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        import json
+        import math
+
+        if self.schema == "signalk":
+            if not self.vessel or not self.attitude_source:
+                raise ValueError("Signal K attitude requires vessel and attitude_source")
+            fields = {
+                "navigation.attitude.roll": "heel_deg",
+                "navigation.attitude.pitch": "trim_deg",
+            }
+            context = json.dumps(f"vessels.urn:mrn:imo:mmsi:{self.vessel}")
+            filters = (
+                '  |> filter(fn: (r) => r._measurement == "navigation.attitude.roll" '
+                'or r._measurement == "navigation.attitude.pitch")\n'
+                f"  |> filter(fn: (r) => r.context == {context})\n"
+                f"  |> filter(fn: (r) => r.source == {json.dumps(self.attitude_source)})\n"
+                '  |> filter(fn: (r) => r._field == "value")\n'
+            )
+        else:
+            fields = {"heel_deg": "heel_deg", "trim_deg": "trim_deg"}
+            filters = (
+                '  |> filter(fn: (r) => r._measurement == "sailing")\n'
+                '  |> filter(fn: (r) => r._field == "heel_deg" or r._field == "trim_deg")\n'
+            )
+        query = f"""
+from(bucket: {json.dumps(self.bucket)})
+  |> range(start: {start.isoformat()}, stop: {(end + timedelta(microseconds=1)).isoformat()})
+{filters}  |> keep(columns: ["_time", "_measurement", "_field", "_value"])
+  |> sort(columns: ["_time"])
+"""
+        tables = self.client.query_api().query(query, org=self.org)
+        readings = []
+        for table in tables:
+            for record in table.records:
+                timestamp = record.values.get("_time")
+                raw = record.values.get("_value")
+                key = record.values.get("_measurement" if self.schema == "signalk" else "_field")
+                if not isinstance(timestamp, datetime) or raw is None or key not in fields:
+                    continue
+                value = float(raw)
+                if math.isfinite(value):
+                    readings.append((timestamp, fields[key], value))
+        readings.sort(key=lambda item: item[0])
+        by_second: dict[str, dict[str, Any]] = {}
+        for timestamp, field, value in readings:
+            second = timestamp.replace(microsecond=0).isoformat()
+            row = by_second.setdefault(second, {"ts": second, "heel_deg": None, "trim_deg": None})
+            if row[field] is None:
+                row[field] = math.degrees(value) if self.schema == "signalk" else value
         return [by_second[key] for key in sorted(by_second)]
 
     async def cogsog(

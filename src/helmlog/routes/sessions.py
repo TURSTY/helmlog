@@ -1376,6 +1376,13 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
     hdg_rows = await _scoped(
         "SELECT ts, heading_deg FROM headings WHERE ts >= ? AND ts <= ? ORDER BY ts"
     )
+    # ``attitudes`` lacks a race_id column (#622 hasn't been backfilled to
+    # the same tagging scheme); fall back to the time-window scan.
+    current_att_rows = await _windowed(
+        "SELECT ts, heel_deg, trim_deg FROM attitudes WHERE ts >= ? AND ts <= ? ORDER BY ts"
+    )
+
+    att_rows = current_att_rows
     if os.environ.get("HELMLOG_TELEMETRY_SOURCE", "sqlite") == "influxdb":
         from helmlog.telemetry_influx import InfluxDBTelemetrySource
 
@@ -1388,6 +1395,7 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
             vessel=os.environ.get("HELMLOG_INFLUX_VESSEL"),
             gps_source=os.environ.get("HELMLOG_INFLUX_GPS_SOURCE"),
             stw_source=os.environ.get("HELMLOG_INFLUX_STW_SOURCE"),
+            attitude_source=os.environ.get("HELMLOG_INFLUX_ATTITUDE_SOURCE"),
         )
         try:
             speeds_rows = await source.speeds(
@@ -1406,6 +1414,10 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
                 datetime.fromisoformat(prestart_start_utc),
                 datetime.fromisoformat(end_utc),
             )
+            att_rows = await source.attitudes(
+                datetime.fromisoformat(prestart_start_utc),
+                datetime.fromisoformat(end_utc),
+            )
         finally:
             source.close()
     else:
@@ -1415,11 +1427,6 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
         cogsog_rows = await _scoped(
             "SELECT ts, cog_deg, sog_kts FROM cogsog WHERE ts >= ? AND ts <= ? ORDER BY ts"
         )
-    # ``attitudes`` lacks a race_id column (#622 hasn't been backfilled to
-    # the same tagging scheme); fall back to the time-window scan.
-    att_rows = await _windowed(
-        "SELECT ts, heel_deg, trim_deg FROM attitudes WHERE ts >= ? AND ts <= ? ORDER BY ts"
-    )
 
     def _by_sec(
         rows: list[Any], project: Callable[[Any], dict[str, Any]]
@@ -1437,6 +1444,11 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
     attitudes_by_s = _by_sec(
         att_rows, lambda r: {"heel_deg": r["heel_deg"], "trim_deg": r["trim_deg"]}
     )
+
+    # Historical InfluxDB attitudes are display-only until orientation and
+    # leeway calibration are validated. Preserve the original SQLite heel
+    # inputs for current, including for existing InfluxDB-backed sessions.
+    current_attitudes_by_s = _by_sec(current_att_rows, lambda r: {"heel_deg": r["heel_deg"]})
 
     # Single pass over the winds rows: per-second dedup into true_winds_by_s
     # (ref 0/4) and app_winds_by_s (ref 2), and per-second tack vote into
@@ -1580,12 +1592,18 @@ async def _compute_session_replay(storage: Storage, session_id: int) -> dict[str
         hdg_v = float(hd["heading_deg"]) if hd else None
         heel_v = float(at["heel_deg"]) if at and at["heel_deg"] is not None else None
         trim_v = float(at["trim_deg"]) if at and at["trim_deg"] is not None else None
+        current_at = current_attitudes_by_s.get(k)
+        current_heel_v = (
+            float(current_at["heel_deg"])
+            if current_at and current_at["heel_deg"] is not None
+            else None
+        )
         sd = compute_set_drift(
             sog=sog_v,
             cog=cog_v,
             stw=stw_v,
             hdg=hdg_v,
-            heel_deg=heel_v,
+            heel_deg=current_heel_v,
             leeway_k=storage._leeway_k,
             compass_offset_port=storage._compass_offset_port,
             compass_offset_stbd=storage._compass_offset_stbd,

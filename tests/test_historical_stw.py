@@ -139,6 +139,7 @@ async def test_influx_replay_stw_is_independent(
         )
         source.headings = AsyncMock(return_value=[{"ts": START.isoformat(), "heading_deg": 90}])
         source.winds = AsyncMock(return_value=[])
+        source.attitudes = AsyncMock(return_value=[])
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=create_app(storage)),
             base_url="http://test",

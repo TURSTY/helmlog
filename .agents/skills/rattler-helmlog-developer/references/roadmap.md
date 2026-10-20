@@ -4,7 +4,7 @@
 - SQLite-backed application/session metadata and historical session synthesis path (verify specifics).
 ## Immediate
 1. First skill-driven implementation test (implemented locally, awaiting review; see [verification](../../../../docs/historical-stw.md)): historical STW (`navigation.speedThroughWater`). Verify field, source, vessel context, historical coverage and SI-to-HelmLog unit conversion before implementing; validate the adapter and replay contracts with tests.
-2. Follow with historical heel, then trim, then current set/drift; verify source paths and conversions, and reuse existing current calculations where appropriate.
+2. Historical heel/trim are implemented locally, awaiting review; see [verification](../../../../docs/historical-attitude.md). Validate physical orientation and leeway calibration before allowing InfluxDB heel to affect current; then proceed with historical current analysis using existing calculations.
 3. Enforce race-only polar eligibility (the audited builder selects all completed sessions); integrate historical InfluxDB telemetry into analysis rather than only the track route.
 
 ## Technical debt and verification
